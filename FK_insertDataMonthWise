@@ -1,0 +1,101 @@
+function readSheet5DataAndWriteToSheetMonthWise() {
+  var sheet5 = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Timesheet Data - 2024");
+  var sheet6 = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Format_1");
+  
+  if (!sheet5) {
+    Logger.log("Sheet not found!");
+    return;
+  }
+  
+  if (!sheet6) {
+    sheet6 = SpreadsheetApp.getActiveSpreadsheet().insertSheet("Format_1");
+  } else {
+    sheet6.clear();
+  }
+
+  var data = sheet5.getDataRange().getValues();
+  
+  var headers = data[0];
+  Logger.log("Headers: " + headers);
+
+  var userData = {}; 
+  var uniqueKeys = {};
+
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var key = row[2];
+    var issueType = row[1];
+    var labels = row[5].toLowerCase();
+    var author = row[8];
+    var timeSpentHours = parseFloat(row[9]) || 0; // Convert to number, default to 0 if invalid
+    var originalEstimationHours = parseFloat(row[6]) || 0; // Convert to number
+    var jiraProject = row[0];
+    var dateLogged = new Date(row[7]);
+
+    var monthYear = Utilities.formatDate(dateLogged, Session.getScriptTimeZone(), "MMM-yyyy");
+
+    if (!userData[author]) {
+      userData[author] = {};
+    }
+    
+    if (!userData[author][monthYear]) {
+      userData[author][monthYear] = {
+        jiraProject: jiraProject,
+        devLogHours: 0,
+        bugLogHours: 0,
+        nonDevLogHours: 0,
+        bugCount: 0,
+        totalLogHours: 0,
+        originalEstimationHours: 0
+      };
+    }
+
+    if (issueType === "Bug" || labels.includes("bug") || issueType === "Partner Bug") {
+      userData[author][monthYear].bugLogHours += timeSpentHours;
+    } else if (labels.includes("non-functional")) {
+      userData[author][monthYear].nonDevLogHours += timeSpentHours;
+    } else {
+      userData[author][monthYear].devLogHours += timeSpentHours;
+    }
+
+    if (issueType === "Bug" || issueType === "Partner Bug") {
+      userData[author][monthYear].bugCount++;
+    }
+
+    userData[author][monthYear].totalLogHours += timeSpentHours;
+
+    if (!uniqueKeys[key]) {
+      uniqueKeys[key] = true;
+      userData[author][monthYear].originalEstimationHours += originalEstimationHours > 0 ? originalEstimationHours : 0;
+    }
+  }
+
+  var output = [];
+  output.push(["Jira Project", "Jira User", "Month-Year", "Dev Log Hours", "Bug Log Hours", "Non-dev Log Hours", "Bug Count", "Total Log Hours", "Original Estimation Hours"]);
+
+  for (var user in userData) {
+    for (var month in userData[user]) {
+      var record = userData[user][month];
+      output.push([
+        record.jiraProject,
+        user,
+        month,
+        record.devLogHours,
+        record.bugLogHours,
+        record.nonDevLogHours,
+        record.bugCount,
+        record.totalLogHours,
+        record.originalEstimationHours
+      ]);
+    }
+  }
+
+  sheet6.getRange(1, 1, 1, output[0].length).setValues([output[0]]);
+  sheet6.getRange(2, 1, output.length - 1, output[0].length).setValues(output.slice(1));
+
+  sheet6.getRange(2, 3, output.length - 1, 1).setNumberFormat("MMM-yyyy");
+
+  sheet6.getRange(2, 1, output.length - 1, output[0].length).sort([{column: 1, ascending: true}, {column: 3, ascending: true}]);
+
+  Logger.log("Monthly data written to Format_1 sheet, sorted by project name and month.");
+}
