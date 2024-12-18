@@ -1,0 +1,121 @@
+function readSheet5DataAndWriteToSheet6_2() {
+  // Open the active spreadsheet
+  var sheet5 = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Timesheet Data - 2024");
+  var sheet6 = SpreadsheetApp.getActiveSpreadsheet().getSheetByName("Format_1");
+  
+  if (!sheet5) {
+    Logger.log("Sheet not found!");
+    return;
+  }
+  
+  if (!sheet6) {
+    // Create "Sheet6" if it does not exist
+    sheet6 = SpreadsheetApp.getActiveSpreadsheet().insertSheet("Format_1");
+  } else {
+    // Clear the existing data in "Sheet6" before adding new data
+    sheet6.clear();
+  }
+
+  // Get all data from Sheet5
+  var data = sheet5.getDataRange().getValues();
+  
+  // Assuming first row contains headers, skip it
+  var headers = data[0];
+  Logger.log("Headers: " + headers);
+
+  var userData = {}; // Object to store user-wise data
+  var uniqueKeys = {}; // Object to track task keys for original estimation
+
+  for (var i = 1; i < data.length; i++) {
+    var row = data[i];
+    var key = row[2]; // 'Key' column (task key)
+    var issueType = row[1]; // 'Issue Type' column
+    var labels = row[5].toLowerCase(); // 'Labels' column (convert to lower case for easier matching)
+    var author = row[8]; // 'Author Display Name' column
+    var timeSpentHours = row[9]; // 'Time Spent (Hours)' column
+    var originalEstimationHours = row[6]; // Assuming 'Original Estimation' is in column 8
+    var jiraProject = row[0]; // Assuming 'Jira Project' is in column 9
+    var dateLogged = new Date(row[7]); // Assuming 'Date' is in column 10 (adjust index as per your data)
+
+    // Format the date as "dd-MMM-yyyy"
+    var formattedDate = Utilities.formatDate(dateLogged, Session.getScriptTimeZone(), "dd-MMM-yyyy");
+
+    // Initialize user data if not existing
+    if (!userData[author]) {
+      userData[author] = {};
+    }
+    
+    // Initialize date data if not existing for user
+    if (!userData[author][formattedDate]) {
+      userData[author][formattedDate] = {
+        bugLogHours: 0,
+        nonDevLogHours: 0,
+        devLogHours: 0,
+        bugCount: 0,
+        totalLogHours: 0,
+        originalEstimationHours: 0,
+        jiraProject: jiraProject
+      };
+    }
+
+    // Process time spent based on issue type and labels
+    if (issueType === "Bug" || labels.includes("bug") || issueType === "Partner Bug") {
+      // Bug-related log hours
+      userData[author][formattedDate].bugLogHours += timeSpentHours;
+    } else if (labels.includes("non-functional")) {
+      // Non-dev related log hours
+      userData[author][formattedDate].nonDevLogHours += timeSpentHours;
+    } else {      
+      userData[author][formattedDate].devLogHours += timeSpentHours;
+    }
+
+    // Increment bug count if the issue type is "Bug"
+    if (issueType === "Bug" || issueType ==="Partner Bug") {
+      userData[author][formattedDate].bugCount++;
+    }
+
+    // Add time spent to total log hours
+    userData[author][formattedDate].totalLogHours += timeSpentHours;
+
+    // Track original estimation hours only if the task key is unique
+    if (!uniqueKeys[key]) {
+      uniqueKeys[key] = true; // Mark the key as processed
+      userData[author][formattedDate].originalEstimationHours += originalEstimationHours > 0 ? originalEstimationHours : 0;
+    }
+  }
+
+  // Prepare data for writing to Sheet6
+  var output = [];
+  // Output header: including Date and Assignee
+    // output.push(["Jira Project", "Jira User", "Date", "Dev Log Hours", "Bug Log Hours", "Non-dev Log Hours", "Bug Count", "Total Log hr"]); 
+
+  output.push(["Jira Project", "Jira User", "Date", "Dev Log Hours", "Bug Log Hours", "Non-dev Log Hours", "Bug Count"]); 
+
+  for (var user in userData) {
+    for (var date in userData[user]) {
+      var record = userData[user][date];
+      output.push([
+        record.jiraProject,
+        user,
+        date,
+        record.devLogHours,
+        record.bugLogHours,
+        record.nonDevLogHours,
+        record.bugCount
+        // record.totalLogHours
+      ]);
+    }
+  }
+
+  // Write headers to the first row and data from the second row in Sheet6
+  sheet6.getRange(1, 1, 1, output[0].length).setValues([output[0]]); // Write headers to row 1
+  sheet6.getRange(2, 1, output.length - 1, output[0].length).setValues(output.slice(1)); // Write data from row 2
+
+  // Set the date format for the "Date" column in Sheet6
+  sheet6.getRange(2, 3, output.length - 1, 1).setNumberFormat("dd-MMM-yyyy"); // Fix range column index to the "Date" column
+
+  // Sort by "Jira Project" (column 1) and then by "Date" (column 3)
+  sheet6.getRange(2, 1, output.length - 1, output[0].length).sort([{column: 1, ascending: true}, {column: 3, ascending: true}]);
+
+  Logger.log("Data written to Format with formatted date, sorted by project name and date");
+}
